@@ -1,0 +1,4 @@
+problemas por los que el bot se ha equivocado:
+
+- no ha mirado la liquided superior (tenia mas fuerza)
+-momentum bastante fuerte

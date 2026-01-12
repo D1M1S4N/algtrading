@@ -1,0 +1,122 @@
+## ⭐ Optimización de un Proyecto Python con Cython
+
+### **1️⃣ Estructura del Proyecto**
+Supongamos que tu proyecto tiene la siguiente estructura:
+
+```
+/mi_proyecto
+│── /modulo1
+│   ├── __init__.py
+│   └── funciones1.py
+│── /modulo2
+│   ├── __init__.py
+│   └── funciones2.py
+│── main.py
+│── setup.py
+```
+
+Donde `main.py` tiene una función `run()` que usa los módulos de `/modulo1` y `/modulo2`.
+
+---
+
+### **2️⃣ Convertir el Código a Cython**
+Para mejorar la velocidad, podemos compilar los módulos internos (`funciones1.py`, `funciones2.py`...) a código máquina con Cython.
+
+**Crea un archivo `setup.py` en la raíz del proyecto:**
+
+```python
+from setuptools import setup, Extension
+from Cython.Build import cythonize
+import glob
+
+# Encuentra todos los archivos .py en los módulos y los compila con Cython
+ext_modules = [
+    Extension(module.replace("/", ".").replace(".py", ""),
+              [module])
+    for module in glob.glob("modulo*/**/*.py", recursive=True)
+]
+
+setup(
+    ext_modules=cythonize(ext_modules, language_level="3"),
+)
+```
+Este script compilará **todos los archivos Python** dentro de `modulo1` y `modulo2` a código optimizado.
+
+---
+
+### **3️⃣ Compilar los Módulos**
+Ejecuta en la terminal:
+
+```bash
+python setup.py build_ext --inplace
+```
+
+Esto generará archivos `.so` (Linux/macOS) o `.pyd` (Windows) en cada módulo.
+Ejemplo de resultado:
+```
+/mi_proyecto
+│── /modulo1
+│   ├── __init__.py
+│   └── funciones1.cpython-XX-XXX.so  ← ✅ Archivo compilado
+│── /modulo2
+│   ├── __init__.py
+│   └── funciones2.cpython-XX-XXX.so  ← ✅ Archivo compilado
+│── main.py
+│── setup.py
+```
+
+Ahora puedes **importar los módulos normalmente** en `main.py` sin cambios en el código.
+
+---
+
+### **4️⃣ Ejecutar `main.py` con los módulos optimizados**
+El código en `main.py` seguirá igual, pero ahora los módulos importados estarán compilados:
+
+```python
+from modulo1.funciones1 import funcion_x
+from modulo2.funciones2 import funcion_y
+
+def run():
+    print("Ejecutando optimizado con Cython")
+    funcion_x()
+    funcion_y()
+```
+Ejecuta:
+
+```bash
+python main.py
+```
+
+✅ **El código es más rápido** porque las funciones de `modulo1` y `modulo2` ahora están compiladas.
+
+---
+
+### **5️⃣ (Opcional) Compilar también `main.py`**
+Si quieres **compilar `main.py`**, cambia su extensión a `main.pyx`, edita `setup.py` así:
+
+```python
+setup(
+    ext_modules=cythonize(["main.pyx"] + [module for module in glob.glob("modulo*/**/*.py", recursive=True)], language_level="3"),
+)
+```
+Luego compila:
+
+```bash
+python setup.py build_ext --inplace
+```
+
+Ejecuta `main` como un **módulo compilado**:
+
+```bash
+python -c "import main; main.run()"
+```
+
+---
+
+### **🚀 Beneficios de esta optimización**
+✔️ **Mejor rendimiento** al compilar funciones críticas.  
+✔️ **Código ofuscado** (difícil de leer o copiar).  
+✔️ **Compatible con Python**, sin cambiar la estructura del proyecto.  
+
+Esto te permite acelerar un **proyecto grande** sin reescribir todo en C++. 🎯🚀
+
