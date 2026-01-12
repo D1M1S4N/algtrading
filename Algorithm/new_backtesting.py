@@ -10,7 +10,7 @@ import ast
 from dotenv import dotenv_values
 from playsound import playsound
 import holidays
-import matplotlib.dates as mdates
+import mplfinance as mpf
 from utils import *
 from estrategia import MarketMaster, liquidity, simplify_liquidity, simplify_liquidity_2, all_liquidity_2, all_liquidity, calcular_pips
 from estrategia.gestion_dinamica import MarketMasterManagement
@@ -344,28 +344,19 @@ class Backtesting:
             return
 
         historial = historial.copy()
-        historial["time_num"] = mdates.date2num(historial["time"])
-        fig, ax = plt.subplots(figsize=(14, 7))
+        historial = historial.set_index("time")
+        historial = historial.rename(
+            columns={"open": "Open", "high": "High", "low": "Low", "close": "Close"}
+        )
 
-        if len(historial) > 1:
-            width = (historial["time_num"].iloc[1] - historial["time_num"].iloc[0]) * 0.6
-        else:
-            width = 0.0005
+        num_rows = len(historial)
+        entry_long_win = np.full(num_rows, np.nan)
+        entry_long_loss = np.full(num_rows, np.nan)
+        entry_short_win = np.full(num_rows, np.nan)
+        entry_short_loss = np.full(num_rows, np.nan)
+        exit_win = np.full(num_rows, np.nan)
+        exit_loss = np.full(num_rows, np.nan)
 
-        for row in historial.itertuples(index=False):
-            color = "green" if row.close >= row.open else "red"
-            ax.plot([row.time_num, row.time_num], [row.low, row.high], color=color, linewidth=0.6)
-            rect = mpatches.Rectangle(
-                (row.time_num - width / 2, min(row.open, row.close)),
-                width,
-                abs(row.close - row.open) if row.close != row.open else 0.000001,
-                facecolor=color,
-                edgecolor=color,
-                linewidth=0.6,
-            )
-            ax.add_patch(rect)
-
-        time_series = historial["time"]
         for operacion in self.operaciones_cerradas:
             fecha_entrada = getattr(operacion, "fecha")
             fecha_salida = getattr(operacion, "fecha_resultado")
@@ -380,26 +371,68 @@ class Backtesting:
             else:
                 salida = resultado
 
-            entrada_idx = time_series.searchsorted(fecha_entrada)
-            salida_idx = time_series.searchsorted(fecha_salida)
-            entrada_idx = min(entrada_idx, len(historial) - 1)
-            salida_idx = min(salida_idx, len(historial) - 1)
-
-            entrada_time = historial["time_num"].iloc[entrada_idx]
-            salida_time = historial["time_num"].iloc[salida_idx]
+            entrada_idx = historial.index.get_indexer([fecha_entrada], method="nearest")[0]
+            salida_idx = historial.index.get_indexer([fecha_salida], method="nearest")[0]
 
             beneficio = (salida - entrada) * (1 if tipo == 1 else -1)
             gano = beneficio >= 0
-            color = "green" if gano else "red"
 
+            if tipo == 1 and gano:
+                entry_long_win[entrada_idx] = entrada
+            elif tipo == 1:
+                entry_long_loss[entrada_idx] = entrada
+            elif gano:
+                entry_short_win[entrada_idx] = entrada
+            else:
+                entry_short_loss[entrada_idx] = entrada
+
+            if gano:
+                exit_win[salida_idx] = salida
+            else:
+                exit_loss[salida_idx] = salida
+
+        addplots = [
+            mpf.make_addplot(entry_long_win, type="scatter", marker="^", markersize=70, color="green"),
+            mpf.make_addplot(entry_long_loss, type="scatter", marker="^", markersize=70, color="red"),
+            mpf.make_addplot(entry_short_win, type="scatter", marker="v", markersize=70, color="green"),
+            mpf.make_addplot(entry_short_loss, type="scatter", marker="v", markersize=70, color="red"),
+            mpf.make_addplot(exit_win, type="scatter", marker="o", markersize=50, color="green"),
+            mpf.make_addplot(exit_loss, type="scatter", marker="o", markersize=50, color="red"),
+        ]
+
+        fig, axlist = mpf.plot(
+            historial,
+            type="candle",
+            addplot=addplots,
+            volume=False,
+            returnfig=True,
+            style="yahoo",
+            title="Backtesting - Velas y operaciones (5m)",
+        )
+        ax = axlist[0]
+
+        for operacion in self.operaciones_cerradas:
+            fecha_entrada = getattr(operacion, "fecha")
+            fecha_salida = getattr(operacion, "fecha_resultado")
+            entrada = getattr(operacion, "entrada")
+            tipo = getattr(operacion, "typo")
+            resultado = getattr(operacion, "resultado")
+
+            if resultado == 1:
+                salida = getattr(operacion, "tp")
+            elif resultado == -1:
+                salida = getattr(operacion, "sl")
+            else:
+                salida = resultado
+
+            entrada_idx = historial.index.get_indexer([fecha_entrada], method="nearest")[0]
+            salida_idx = historial.index.get_indexer([fecha_salida], method="nearest")[0]
+
+            entrada_time = historial.index[entrada_idx]
+            salida_time = historial.index[salida_idx]
+            beneficio = (salida - entrada) * (1 if tipo == 1 else -1)
+            color = "green" if beneficio >= 0 else "red"
             ax.plot([entrada_time, salida_time], [entrada, salida], linestyle="--", color=color, linewidth=1.0)
-            ax.scatter(entrada_time, entrada, marker="^" if tipo == 1 else "v", color=color, s=40, zorder=5)
-            ax.scatter(salida_time, salida, marker="o", color=color, s=30, zorder=5)
-
-        ax.set_title("Backtesting - Velas y operaciones")
-        ax.xaxis_date()
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d %H:%M"))
-        fig.autofmt_xdate()
 
         legend_items = [
             mpatches.Patch(color="green", label="Ganadora"),
@@ -566,8 +599,8 @@ class Backtesting:
                         data_15m = all_data_15m[self.name]
                         data_1h = all_data_1h[self.name]
 
-                        if not data_1m.empty:
-                            self.historial_velas.append(data_1m[["time", "open", "high", "low", "close"]].copy())
+                        if not data_5m.empty:
+                            self.historial_velas.append(data_5m[["time", "open", "high", "low", "close"]].copy())
 
                         #print(data_5m.columns)
                         #filtered_df = data_5m[(data_5m['all_candle_patterns'] != 0)]
@@ -1286,31 +1319,6 @@ class Backtesting:
                                         self.historial_total_puntos_liquidez[str(dia.date())] = [(mejor_accion, entrada, pos_dia, tp_largo, tp_corto, data_5m_actual.iloc[-1].tolist()[1:])]
                                     else:
                                         self.historial_total_puntos_liquidez[str(dia.date())].append((mejor_accion, entrada, pos_dia, tp_largo, tp_corto, data_5m_actual.iloc[-1].tolist()[1:]))
-
-                        #if len(self.posiciones)!=0 and self.grafico:
-                        if self.grafico:
-                            try:
-                                plt.plot(data[["ask", "bid"]])
-
-                                for i in self.posiciones:
-                                    x = [data.index[data['time'] == getattr(i, "fecha")].tolist()[0], data.index[data['time'] == getattr(i, "fecha_resultado")].tolist()[0]]
-                                    y = [getattr(i, "entrada")]    
-
-                                    if getattr(i, "resultado") == 1:
-                                        y.append(getattr(i, "tp"))
-
-                                    elif getattr(i,"resultado") == -1:
-                                        y.append(getattr(i, "sl"))
-
-                                    else:
-                                        y.append(getattr(i, "resultado"))
-
-                                    plt.plot(x, y, '--bo', color="green" if i.typo == 1 else "red", marker='^' if i.typo == 1 else 'v')         
-
-                                plt.show()
-
-                            except:
-                                pass
 
                         lista_borrar = []
                         for posicion in self.posiciones:
