@@ -10,6 +10,7 @@ import ast
 from dotenv import dotenv_values
 from playsound import playsound
 import holidays
+import matplotlib.dates as mdates
 from utils import *
 from estrategia import MarketMaster, liquidity, simplify_liquidity, simplify_liquidity_2, all_liquidity_2, all_liquidity, calcular_pips
 from estrategia.gestion_dinamica import MarketMasterManagement
@@ -274,6 +275,9 @@ class Backtesting:
         self.perdida_maxima_cuenta = 10 / 100
         self.historial_dinero = [self.dinero_inicial]
         self.historial_dinero_con_beneficio = [self.dinero_inicial]
+        self.historial_velas = []
+        self.operaciones_cerradas = []
+        self.operaciones_cerradas_ids = set()
         self.positivos_negativos = [0, 0]
         self.n_prints_comprobacion_inicial = 0
         self.original_min_spread_trigger = min_spread_trigger
@@ -318,6 +322,92 @@ class Backtesting:
         self.historial_total_puntos_liquidez = {}
 
         super().__init__(*args, **kwargs)
+
+    def _registrar_operaciones_cerradas(self, posiciones):
+        for posicion in posiciones:
+            if getattr(posicion, "resultado") != 0 and getattr(posicion, "id") not in self.operaciones_cerradas_ids:
+                self.operaciones_cerradas.append(posicion)
+                self.operaciones_cerradas_ids.add(getattr(posicion, "id"))
+
+    def _construir_historial_velas(self):
+        if not self.historial_velas:
+            return pd.DataFrame()
+        historial = pd.concat(self.historial_velas, ignore_index=True)
+        historial = historial.drop_duplicates(subset=["time"]).sort_values("time")
+        return historial
+
+    def _mostrar_grafico_velas_operaciones(self):
+        if not self.grafico:
+            return
+        historial = self._construir_historial_velas()
+        if historial.empty or not self.operaciones_cerradas:
+            return
+
+        historial = historial.copy()
+        historial["time_num"] = mdates.date2num(historial["time"])
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        if len(historial) > 1:
+            width = (historial["time_num"].iloc[1] - historial["time_num"].iloc[0]) * 0.6
+        else:
+            width = 0.0005
+
+        for row in historial.itertuples(index=False):
+            color = "green" if row.close >= row.open else "red"
+            ax.plot([row.time_num, row.time_num], [row.low, row.high], color=color, linewidth=0.6)
+            rect = mpatches.Rectangle(
+                (row.time_num - width / 2, min(row.open, row.close)),
+                width,
+                abs(row.close - row.open) if row.close != row.open else 0.000001,
+                facecolor=color,
+                edgecolor=color,
+                linewidth=0.6,
+            )
+            ax.add_patch(rect)
+
+        time_series = historial["time"]
+        for operacion in self.operaciones_cerradas:
+            fecha_entrada = getattr(operacion, "fecha")
+            fecha_salida = getattr(operacion, "fecha_resultado")
+            entrada = getattr(operacion, "entrada")
+            tipo = getattr(operacion, "typo")
+            resultado = getattr(operacion, "resultado")
+
+            if resultado == 1:
+                salida = getattr(operacion, "tp")
+            elif resultado == -1:
+                salida = getattr(operacion, "sl")
+            else:
+                salida = resultado
+
+            entrada_idx = time_series.searchsorted(fecha_entrada)
+            salida_idx = time_series.searchsorted(fecha_salida)
+            entrada_idx = min(entrada_idx, len(historial) - 1)
+            salida_idx = min(salida_idx, len(historial) - 1)
+
+            entrada_time = historial["time_num"].iloc[entrada_idx]
+            salida_time = historial["time_num"].iloc[salida_idx]
+
+            beneficio = (salida - entrada) * (1 if tipo == 1 else -1)
+            gano = beneficio >= 0
+            color = "green" if gano else "red"
+
+            ax.plot([entrada_time, salida_time], [entrada, salida], linestyle="--", color=color, linewidth=1.0)
+            ax.scatter(entrada_time, entrada, marker="^" if tipo == 1 else "v", color=color, s=40, zorder=5)
+            ax.scatter(salida_time, salida, marker="o", color=color, s=30, zorder=5)
+
+        ax.set_title("Backtesting - Velas y operaciones")
+        ax.xaxis_date()
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d %H:%M"))
+        fig.autofmt_xdate()
+
+        legend_items = [
+            mpatches.Patch(color="green", label="Ganadora"),
+            mpatches.Patch(color="red", label="Perdedora"),
+        ]
+        ax.legend(handles=legend_items, loc="upper left")
+        plt.tight_layout()
+        plt.show()
 
     def run(self) -> None:
 
@@ -475,6 +565,9 @@ class Backtesting:
                         data_5m = all_data_5m[self.name]
                         data_15m = all_data_15m[self.name]
                         data_1h = all_data_1h[self.name]
+
+                        if not data_1m.empty:
+                            self.historial_velas.append(data_1m[["time", "open", "high", "low", "close"]].copy())
 
                         #print(data_5m.columns)
                         #filtered_df = data_5m[(data_5m['all_candle_patterns'] != 0)]
@@ -1224,6 +1317,8 @@ class Backtesting:
                             if posicion.resultado != 0:
                                 lista_borrar.append(posicion)
 
+                        self._registrar_operaciones_cerradas(lista_borrar)
+
                         for borrar_posicion in lista_borrar:
                             self.posiciones.remove(borrar_posicion)
 
@@ -1293,6 +1388,8 @@ class Backtesting:
 
                 if self.sounds:
                     playsound('data\\ok.mp3')
+
+                self._mostrar_grafico_velas_operaciones()
 
                 if len(self.historial_dinero) > 1:
                     if self.dinero>self.dinero_inicial:
