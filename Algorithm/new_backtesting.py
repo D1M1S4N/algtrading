@@ -278,6 +278,7 @@ class Backtesting:
         self.historial_velas = []
         self.operaciones_cerradas = []
         self.operaciones_cerradas_ids = set()
+        self.contador_operaciones = 0
         self.positivos_negativos = [0, 0]
         self.n_prints_comprobacion_inicial = 0
         self.original_min_spread_trigger = min_spread_trigger
@@ -328,6 +329,10 @@ class Backtesting:
             if getattr(posicion, "resultado") != 0 and getattr(posicion, "id") not in self.operaciones_cerradas_ids:
                 self.operaciones_cerradas.append(posicion)
                 self.operaciones_cerradas_ids.add(getattr(posicion, "id"))
+
+    def _next_operacion_id(self):
+        self.contador_operaciones += 1
+        return self.contador_operaciones
 
     def _construir_historial_velas(self):
         if not self.historial_velas:
@@ -634,6 +639,9 @@ class Backtesting:
                         data_5m = all_data_5m[self.name]
                         data_15m = all_data_15m[self.name]
                         data_1h = all_data_1h[self.name]
+
+                        if not data_5m.empty:
+                            self.historial_velas.append(data_5m[["time", "open", "high", "low", "close"]].copy())
 
                         if not data_5m.empty:
                             self.historial_velas.append(data_5m[["time", "open", "high", "low", "close"]].copy())
@@ -1202,12 +1210,12 @@ class Backtesting:
                                             limite_tiempo = calcular_tiempo_limite(tp, ask, data_5m_actual['atr'].iloc[-1]) / self.divisor_tiempo_limite
                                             #self.posiciones.append(Posicion(self.name,fecha,action,ask,lotaje,tp,sl,tp,sl,0,0,limite_tiempo))
                                             try:
-                                                self.posiciones.append(Posicion(self.name, fecha, action, ask, lotaje, tp, sl, tp, sl, 0, 0, data_temporality, False, liquidez_final[ask], 1))
+                                                self.posiciones.append(Posicion(self.name, fecha, action, ask, lotaje, tp, sl, tp, sl, 0, 0, data_temporality, False, liquidez_final[ask], self._next_operacion_id()))
                                             except:
                                                 try:
-                                                    self.posiciones.append(Posicion(self.name, fecha, action, ask, lotaje, tp, sl, tp, sl, 0, 0, data_temporality, False, liquidez_final[bid], 1))
+                                                    self.posiciones.append(Posicion(self.name, fecha, action, ask, lotaje, tp, sl, tp, sl, 0, 0, data_temporality, False, liquidez_final[bid], self._next_operacion_id()))
                                                 except:
-                                                    self.posiciones.append(Posicion(self.name, fecha, action, ask, lotaje, tp, sl, tp, sl, 0, 0, data_temporality, False, 0, 1))
+                                                    self.posiciones.append(Posicion(self.name, fecha, action, ask, lotaje, tp, sl, tp, sl, 0, 0, data_temporality, False, 0, self._next_operacion_id()))
                                             file.write(f"\ncrear largo entrada:{round(ask, 4)} sl:{round(sl, 4)} tp:{round(tp, 4)} lotaje: {lotaje} a las {fecha} | Señales: {estrategias}")
 
                                             if self.verbose:
@@ -1226,12 +1234,12 @@ class Backtesting:
                                             limite_tiempo = calcular_tiempo_limite(tp, bid, data_5m_actual['atr'].iloc[-1]) / self.divisor_tiempo_limite
                                             #self.posiciones.append(Posicion(self.name,fecha,action,bid,lotaje,tp,sl,tp,sl,0,0,limite_tiempo))
                                             try:
-                                                self.posiciones.append(Posicion(self.name, fecha, action, bid, lotaje, tp, sl, tp, sl, 0, 0, data_temporality, False, liquidez_final[bid], 1))
+                                                self.posiciones.append(Posicion(self.name, fecha, action, bid, lotaje, tp, sl, tp, sl, 0, 0, data_temporality, False, liquidez_final[bid], self._next_operacion_id()))
                                             except:
                                                 try:
-                                                    self.posiciones.append(Posicion(self.name, fecha, action, bid, lotaje, tp, sl, tp, sl, 0, 0, data_temporality, False, liquidez_final[ask], 1))
+                                                    self.posiciones.append(Posicion(self.name, fecha, action, bid, lotaje, tp, sl, tp, sl, 0, 0, data_temporality, False, liquidez_final[ask], self._next_operacion_id()))
                                                 except:
-                                                    self.posiciones.append(Posicion(self.name, fecha, action, bid, lotaje, tp, sl, tp, sl, 0, 0, data_temporality, False, 0, 1))
+                                                    self.posiciones.append(Posicion(self.name, fecha, action, bid, lotaje, tp, sl, tp, sl, 0, 0, data_temporality, False, 0, self._next_operacion_id()))
 
                                             file.write(f"\ncrear corto entrada:{round(bid, 4)} sl:{round(sl, 4)} tp:{round(tp, 4)} lotaje: {lotaje} a las {fecha} | Señales: {estrategias}")
 
