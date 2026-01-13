@@ -638,6 +638,9 @@ class Backtesting:
                         if not data_5m.empty:
                             self.historial_velas.append(data_5m[["time", "open", "high", "low", "close"]].copy())
 
+                        if not data_5m.empty:
+                            self.historial_velas.append(data_5m[["time", "open", "high", "low", "close"]].copy())
+
                         #print(data_5m.columns)
                         #filtered_df = data_5m[(data_5m['all_candle_patterns'] != 0)]
                         #print(filtered_df)
