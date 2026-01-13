@@ -350,6 +350,8 @@ class Backtesting:
         )
 
         num_rows = len(historial)
+        if num_rows == 0:
+            return
         entry_long_win = np.full(num_rows, np.nan)
         entry_long_loss = np.full(num_rows, np.nan)
         entry_short_win = np.full(num_rows, np.nan)
@@ -391,14 +393,19 @@ class Backtesting:
             else:
                 exit_loss[salida_idx] = salida
 
-        addplots = [
-            mpf.make_addplot(entry_long_win, type="scatter", marker="^", markersize=70, color="green"),
-            mpf.make_addplot(entry_long_loss, type="scatter", marker="^", markersize=70, color="red"),
-            mpf.make_addplot(entry_short_win, type="scatter", marker="v", markersize=70, color="green"),
-            mpf.make_addplot(entry_short_loss, type="scatter", marker="v", markersize=70, color="red"),
-            mpf.make_addplot(exit_win, type="scatter", marker="o", markersize=50, color="green"),
-            mpf.make_addplot(exit_loss, type="scatter", marker="o", markersize=50, color="red"),
-        ]
+        addplots = []
+        if np.isfinite(entry_long_win).any():
+            addplots.append(mpf.make_addplot(entry_long_win, type="scatter", marker="^", markersize=70, color="green"))
+        if np.isfinite(entry_long_loss).any():
+            addplots.append(mpf.make_addplot(entry_long_loss, type="scatter", marker="^", markersize=70, color="red"))
+        if np.isfinite(entry_short_win).any():
+            addplots.append(mpf.make_addplot(entry_short_win, type="scatter", marker="v", markersize=70, color="green"))
+        if np.isfinite(entry_short_loss).any():
+            addplots.append(mpf.make_addplot(entry_short_loss, type="scatter", marker="v", markersize=70, color="red"))
+        if np.isfinite(exit_win).any():
+            addplots.append(mpf.make_addplot(exit_win, type="scatter", marker="o", markersize=50, color="green"))
+        if np.isfinite(exit_loss).any():
+            addplots.append(mpf.make_addplot(exit_loss, type="scatter", marker="o", markersize=50, color="red"))
 
         fig, axlist = mpf.plot(
             historial,
@@ -441,6 +448,35 @@ class Backtesting:
         ax.legend(handles=legend_items, loc="upper left")
         plt.tight_layout()
         plt.show()
+
+    def _guardar_csv_operaciones(self):
+        if not self.operaciones_cerradas:
+            return
+        csv_path = "data/registros/registro_backtesting.csv"
+        with open(csv_path, "w", newline="") as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(["Fecha", "Tipo", "Entrada", "Lotaje", "TP", "SL", "Resultado", "Fecha Resultado"])
+            for operacion in self.operaciones_cerradas:
+                tipo = "Largo" if getattr(operacion, "typo") == 1 else "Corto"
+                resultado = getattr(operacion, "resultado")
+                if resultado == 1:
+                    resultado_label = "TP"
+                elif resultado == -1:
+                    resultado_label = "SL"
+                else:
+                    resultado_label = "PARADA"
+                writer.writerow(
+                    [
+                        getattr(operacion, "fecha"),
+                        tipo,
+                        getattr(operacion, "entrada"),
+                        getattr(operacion, "lotaje"),
+                        getattr(operacion, "tp"),
+                        getattr(operacion, "sl"),
+                        resultado_label,
+                        getattr(operacion, "fecha_resultado"),
+                    ]
+                )
 
     def run(self) -> None:
 
@@ -598,6 +634,9 @@ class Backtesting:
                         data_5m = all_data_5m[self.name]
                         data_15m = all_data_15m[self.name]
                         data_1h = all_data_1h[self.name]
+
+                        if not data_5m.empty:
+                            self.historial_velas.append(data_5m[["time", "open", "high", "low", "close"]].copy())
 
                         if not data_5m.empty:
                             self.historial_velas.append(data_5m[["time", "open", "high", "low", "close"]].copy())
@@ -1396,6 +1435,8 @@ class Backtesting:
 
                 if self.sounds:
                     playsound('data\\ok.mp3')
+
+                self._guardar_csv_operaciones()
 
                 self._mostrar_grafico_velas_operaciones()
 
